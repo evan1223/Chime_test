@@ -3,13 +3,6 @@
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
 
-+---------------+       +---------------+       +---------------+       +---------------+
-| React Frontend|       | API Gateway   |       | Lambda        |       | Amazon        |
-| (Chime SDK)   |------>| WebSocket     |------>| Function      |------>| Transcribe    |
-|               |<------|               |<------|               |<------| Streaming     |
-+---------------+       +---------------+       +---------------+       +---------------+
-
-
 
 ## Available Scripts
 
