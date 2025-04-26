@@ -5,9 +5,7 @@ import {
   DefaultMeetingSession,
   LogLevel,
   MeetingSession,
-  MeetingSessionConfiguration,
-  DefaultActiveSpeakerPolicy,
-  MeetingSessionStatusCode
+  MeetingSessionConfiguration
 } from 'amazon-chime-sdk-js';
 
 export default function ChimeDemo() {
@@ -24,125 +22,74 @@ export default function ChimeDemo() {
 
         // Call your Lambda + API Gateway
         const response = await fetch('https://on9xktq34e.execute-api.us-east-1.amazonaws.com/api/chime/start');
-        if (!response.ok) {
-          throw new Error(`API failed with status ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`API failed with status ${response.status}`);
 
         const data = await response.json();
         const { meetingResponse, attendeeResponse } = data;
 
-        // Create logger and device controller with ERROR level to reduce logging
-        const logger = new ConsoleLogger('ChimeLogs', LogLevel.ERROR);
+        // Create logger with ERROR level
+        const logger = new ConsoleLogger('ChimeMVP', LogLevel.ERROR);
         const deviceController = new DefaultDeviceController(logger);
 
-        // Create and configure the meeting session
+        // Create the meeting configuration
         const configuration = new MeetingSessionConfiguration(meetingResponse, attendeeResponse);
-        
+
+        // Create the meeting session with updated config
         const session = new DefaultMeetingSession(configuration, logger, deviceController);
         setMeetingSession(session);
 
         // Bind audio element for output
         if (audioElement.current) {
           await session.audioVideo.bindAudioElement(audioElement.current);
-          console.log('✅ Audio element bound successfully');
+          console.log('✅ Audio element bound');
         }
 
-        // Set up audio input (microphone)
+        // Set up audio input (microphone) - FIXED METHOD NAME
         try {
           const audioInputDevices = await session.audioVideo.listAudioInputDevices();
           if (audioInputDevices.length > 0) {
-            await session.audioVideo.chooseAudioInputDevice(audioInputDevices[0].deviceId);
+            // FIXED: using the correct method name for v3.27.1
+            await session.audioVideo.startAudioInput(audioInputDevices[0].deviceId);
             console.log('✅ Microphone selected:', audioInputDevices[0].label);
           }
         } catch (err) {
           console.warn('⚠️ Microphone access issue:', err);
         }
 
-        // Set up audio output (speakers)
+        // Set up audio output (speakers) - FIXED METHOD NAME
         try {
           const audioOutputDevices = await session.audioVideo.listAudioOutputDevices();
           if (audioOutputDevices.length > 0) {
-            await session.audioVideo.chooseAudioOutputDevice(audioOutputDevices[0].deviceId);
+            // FIXED: using the correct method name for v3.27.1
+            await session.audioVideo.chooseAudioOutput(audioOutputDevices[0].deviceId);
             console.log('✅ Speaker selected:', audioOutputDevices[0].label);
           }
         } catch (err) {
           console.warn('⚠️ Speaker selection issue:', err);
         }
 
-        // Add observer for basic audio events with proper error handling
+        // Add observer for basic audio events
         session.audioVideo.addObserver({
           audioVideoDidStart: () => {
             console.log('✅ Audio connected successfully');
             setIsConnected(true);
-            setError(null); // Clear any previous errors
+            setError(null);
           },
-          audioVideoDidStop: (sessionStatus) => {
-            console.log('🛑 Audio disconnected', sessionStatus);
+          audioVideoDidStop: () => {
+            console.log('🛑 Audio disconnected');
             setIsConnected(false);
-            
-            // Handle errors through the sessionStatus
-            if (sessionStatus.statusCode() !== MeetingSessionStatusCode.OK) {
-              const errorMessage = `Connection error: ${sessionStatus.statusCode()}`;
-              console.error(errorMessage);
-              setError(errorMessage);
-            }
           },
           audioVideoDidStartConnecting: (reconnecting) => {
-            if (reconnecting) {
-              console.log('Attempting to reconnect...');
-            }
-          },
-          // Add any other standard observer methods as needed
-          connectionDidBecomePoor: () => {
-            console.warn('⚠️ Connection quality is poor');
-          },
-          connectionDidSuggestStopVideo: () => {
-            console.warn('⚠️ Connection suggests stopping video');
+            console.log(reconnecting ? 'Reconnecting...' : 'Connecting...');
           }
         });
 
-        // Properly implement the active speaker detector
-        const activeSpeakerPolicy = new DefaultActiveSpeakerPolicy();
-        session.audioVideo.subscribeToActiveSpeakerDetector(
-          activeSpeakerPolicy,
-          (activeSpeakers) => {
-            if (activeSpeakers.length > 0) {
-              console.log('Active speakers:', activeSpeakers);
-            }
-          }
-        );
-
-        // Try to intercept WebRTC errors with a monkey patch on the prototype
-        try {
-          const originalGetRTCStats = session.audioVideo.getRTCPeerConnectionStats;
-          if (originalGetRTCStats) {
-            // @ts-ignore - We're deliberately overriding this method
-            session.audioVideo.getRTCPeerConnectionStats = async () => {
-              try {
-                return await originalGetRTCStats.call(session.audioVideo);
-              } catch (err) {
-                console.warn('Stats collection error (suppressed):', err);
-                return new Map();
-              }
-            };
-          }
-        } catch (err) {
-          console.warn('Could not patch stats collection:', err);
-        }
-        
-        // Add a small delay before starting
-        setTimeout(() => {
-          try {
-            session.audioVideo.start();
-            console.log('🎯 Starting audio connection...');
-          } catch (err) {
-            console.error('Failed to start session:', err);
-            setError('Failed to start audio session');
-          }
-        }, 1000);
+        // Start the meeting
+        session.audioVideo.start();
+        console.log('🎯 Starting audio connection');
         
       } catch (err: any) {
-        console.error('❌ Error setting up audio:', err);
+        console.error('❌ Setup error:', err);
         setError(err.message || 'Unknown error');
       } finally {
         setIsLoading(false);
@@ -151,7 +98,6 @@ export default function ChimeDemo() {
 
     setupChime();
 
-    // Clean up when component unmounts
     return () => {
       if (meetingSession) {
         try {
@@ -166,30 +112,26 @@ export default function ChimeDemo() {
 
   return (
     <div style={{ padding: '2rem' }}>
-      <h2>{isConnected ? '🎤 已連上語音服務' : '⏳ 正在連接語音服務...'}</h2>
-      <p>{isConnected ? '目前正在語音通話中。' : '正在建立語音連接...'}</p>
+      <h2>{isConnected ? '🎤 Voice Connected' : '⏳ Connecting Voice...'}</h2>
+      <p>{isConnected ? 'Voice chat is active.' : 'Establishing voice connection...'}</p>
 
       <audio ref={audioElement} style={{ display: 'none' }} />
 
-      {isLoading && <div>Loading meeting resources...</div>}
-      {error && <div style={{ color: 'red' }}>Error: {error}</div>}
-      
-      {/* Add retry button when connection fails */}
-      {error && !isLoading && (
-        <button 
-          onClick={() => window.location.reload()}
-          style={{ 
-            marginTop: '10px',
-            padding: '8px 16px',
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer'
-          }}
-        >
-          Retry Connection
-        </button>
+      {isLoading && <div>Loading voice resources...</div>}
+      {error && (
+        <div style={{ color: 'red', marginTop: '10px' }}>
+          Error: {error}
+          <button 
+            onClick={() => window.location.reload()}
+            style={{ 
+              display: 'block', 
+              marginTop: '10px',
+              padding: '5px 10px'
+            }}
+          >
+            Retry Connection
+          </button>
+        </div>
       )}
     </div>
   );
